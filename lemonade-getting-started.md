@@ -324,55 +324,64 @@ lemonade backends | grep vulkan
 lemonade pull Gemma-4-E2B-it-GGUF
 ```
 
-但 AI 模型存储在 HuggingFace（国外的模型仓库），国内网络无法直接访问。我们通过镜像服务器来下载。
+但 Lemonade 默认从 HuggingFace（国外服务器）下载模型，国内网络无法直接访问。我们改用 [ModelScope 魔搭社区](https://modelscope.cn)——AMD 的合作伙伴，国内可直连。
 
-### 解决方案：用 HuggingFace 镜像 + Python 下载
+### 解决方案：从 ModelScope 下载模型
+
+```bash
+# 安装 ModelScope SDK（如未安装）
+pip install -q modelscope
+```
 
 ```python
 python3 << 'EOF'
+from modelscope.hub.file_download import model_file_download
 import os
 
-# 使用镜像服务器，绕过 HuggingFace 网络封锁
-os.environ['HF_ENDPOINT'] = ''
-# 禁用不兼容镜像服务器的 xet 下载加速
-os.environ['HF_HUB_DISABLE_XET'] = '1'
+print("正在从 ModelScope 下载 Gemma-4-E2B-it 模型（约 3.8GB）...")
+print("ModelScope 服务器在国内，下载速度通常较快...")
 
-from huggingface_hub import snapshot_download
-
-print("正在下载 Gemma-4-E2B-it 模型（约 3.8GB，请耐心等待）...")
-print("通过镜像服务器下载，速度取决于网络状况...")
-
-# 只下载需要的 3 个文件：模型权重 + 视觉处理器 + 配置
-path = snapshot_download(
-    "unsloth/gemma-4-E2B-it-GGUF",
-    allow_patterns=["gemma-4-E2B-it-Q4_K_M.gguf", "mmproj-F16.gguf", "config.json"],
+# 从 ModelScope 下载模型文件
+gguf_path = model_file_download(
+    model_id="unsloth/gemma-4-E2B-it-GGUF",
+    file_path="gemma-4-E2B-it-Q4_K_M.gguf"
 )
-print(f"\n模型下载完成！")
-print(f"   存储位置: {path}")
+mmproj_path = model_file_download(
+    model_id="unsloth/gemma-4-E2B-it-GGUF",
+    file_path="mmproj-F16.gguf"
+)
+config_path = model_file_download(
+    model_id="unsloth/gemma-4-E2B-it-GGUF",
+    file_path="config.json"
+)
+print(f"模型文件下载完成！")
 
-# 确保模型放在 Lemonade 能找到的路径
-import shutil
-hub_path = "/root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF"
-src_path = "/root/.cache/huggingface/models--unsloth--gemma-4-E2B-it-GGUF"
-os.makedirs("/root/.cache/huggingface/hub", exist_ok=True)
-if os.path.exists(src_path) and not os.path.exists(hub_path):
-    os.system(f"cp -al {src_path} {hub_path}")
-    print("模型路径已配置，Lemonade 可以找到它了")
-elif os.path.exists(hub_path):
-    print("模型路径已就绪")
+# 配置到 Lemonade 的模型缓存目录
+cache_dir = "/root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF"
+snap_dir = f"{cache_dir}/snapshots/main"
+os.makedirs(snap_dir, exist_ok=True)
+os.makedirs(f"{cache_dir}/refs", exist_ok=True)
+
+with open(f"{cache_dir}/refs/main", "w") as f:
+    f.write("main")
+
+for src in [gguf_path, mmproj_path, config_path]:
+    dst = os.path.join(snap_dir, os.path.basename(src))
+    if not os.path.exists(dst):
+        os.symlink(src, dst)
+
+print("模型已配置到 Lemonade 缓存，可以加载了")
 EOF
 ```
 
 你应该看到类似这样的输出：
 
 ```
-正在下载 Gemma-4-E2B-it 模型（约 3.8GB，请耐心等待）...
-通过镜像服务器下载，速度取决于网络状况...
-Fetching 3 files: 100%|##########| 3/3 [02:30<00:00]
-
-模型下载完成！
-   存储位置: /root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF/snapshots/...
-模型路径已配置，Lemonade 可以找到它了
+正在从 ModelScope 下载 Gemma-4-E2B-it 模型（约 3.8GB）...
+ModelScope 服务器在国内，下载速度通常较快...
+Downloading: 100%|##########| 3.11G/3.11G
+模型文件下载完成！
+模型已配置到 Lemonade 缓存，可以加载了
 ```
 
 > **注意：** 下载 3.8GB 可能需要 2–5 分钟，取决于网络速度。如果中途断开，重新运行即可（已下载的部分会自动续传）。
@@ -649,7 +658,7 @@ EOF
 lemonade list
 
 # 例如：运行 27B 参数的 Qwen 模型（约 22GB，需要更长下载时间）
-# HF_ENDPOINT= HF_HUB_DISABLE_XET=1 lemonade run Qwen3.6-35B-A3B-GGUF --llamacpp vulkan
+# lemonade run Qwen3.6-35B-A3B-GGUF --llamacpp vulkan
 ```
 
 ### 接入更多工具
