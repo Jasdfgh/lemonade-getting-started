@@ -23,39 +23,70 @@
 
 1. 浏览器访问 **https://radeon.anruicloud.com**
 2. 登录你的账号（如果没有，先注册）
-3. 点击 **创建 Workspace**
-4. 镜像选择：**AMD OneClick Base**
-5. GPU 配置：默认即可（RX 7900 单卡）
-6. 等待 workspace 启动完成（通常 1-2 分钟）
+3. 点击页面上的 **Create Template** 按钮创建一个新的 workspace
 
-[截图占位]
+![创建 Workspace](assets/01-create-workspace.png)
+
+4. 在创建页面中，镜像选择：**AMD OneClick Base**，其他配置保持默认
+
+![选择镜像](assets/02-workspace-config.png)
+
+5. 等待 workspace 创建完成（通常 1-2 分钟）
+
+### 启动 Workspace
+
+创建完成后，进入你的 workspace：
+
+1. 点击右上角的 **Profile** 头像
+
+![点击 Profile](assets/03-launch-step1.png)
+
+2. 在 workspace 列表中，点击 **Open Notebook** 按钮
+
+![打开 Notebook](assets/04-launch-step2.png)
 
 ### 打开终端
 
-Workspace 启动后，你会看到一个 JupyterLab 界面。点击左侧的 **Terminal** 打开一个命令行终端——接下来所有操作都在这里进行。
+进入 JupyterLab 后，你需要打开一个命令行终端：
 
-> 终端就是那个黑色背景、可以输入文字命令的窗口。输入命令后按回车，系统执行并显示结果。
+1. 点击顶部的 **"+"** 按钮打开 Launcher 页面
+2. 在 Launcher 页面的 **Other** 区域，点击 **Terminal**
 
-[截图占位]
+![打开 Terminal](assets/05-open-terminal.png)
+
+终端打开后，你会看到一个可以输入命令的窗口：
+
+![Terminal 已就绪](assets/06-terminal-ready.png)
+
+> 终端是你输入命令的地方。输入一行命令后按回车，系统就会执行并显示结果。接下来所有操作都在这里进行。
 
 ### 环境确认
 
-你的环境应该具备以下配置（系统已预装，无需操心）：
+本教程在 AMD Radeon Cloud 平台上验证通过，使用以下配置：
 
 | 项目 | 值 |
 |------|-----|
-| 操作系统 | Ubuntu 24.04 |
-| 用户 | root |
-| Python | 3.12 |
+| 平台 | AMD Radeon Cloud (radeon.anruicloud.com) |
+| 镜像 | AMD OneClick Base (rocm7.2.1-py3.12) |
 | GPU | AMD Radeon RX 7900（gfx1100，RDNA3 架构） |
-| ROCm | 7.2.1 |
-| 磁盘空间 | 3.5TB（绰绰有余） |
+| ROCm | 7.2.1（预装） |
+| Python | 3.12（预装） |
 
 ---
 
 ## 第一步 — 安装 Lemonade Server
 
-Lemonade Server 是 AMD 官方出品的本地 AI 推理服务——你可以把它理解为一个"AI 引擎"，安装了它，GPU 就能运行 AI 模型了。
+### Lemonade Server 是什么？
+
+[Lemonade Server](https://github.com/lemonade-sdk/lemonade) 是 AMD 官方开源的本地 AI 推理服务。它的作用是：
+
+1. **管理 AI 模型** — 一条命令下载、加载、切换不同的 AI 模型
+2. **提供标准 API** — 兼容 OpenAI API 格式，任何支持 ChatGPT 的工具都能直接接入
+3. **优化 GPU 推理** — 自动检测你的 AMD GPU 并选择最佳加速方式
+
+简单来说：安装了 Lemonade，你的 GPU 就变成了一台本地 AI 服务器。
+
+### 安装
 
 ```bash
 # 更新软件源列表
@@ -364,7 +395,7 @@ Loading model: Gemma-4-E2B-it-GGUF
 Model loaded successfully!
 ```
 
-[截图占位]
+![模型加载成功](assets/07-model-loaded.png)
 
 "Model loaded successfully!" 表示 AI 模型已经加载到 GPU 上了。
 
@@ -429,7 +460,7 @@ AI 回答: 2 + 2 equals **4**.
 生成速度: 168.5 tokens/秒
 ```
 
-[截图占位]
+![API 对话成功](assets/08-api-chat.png)
 
 AI 正确回答了，而且速度超过 160 tokens/秒——这就是 GPU 加速的威力。
 
@@ -562,15 +593,15 @@ EOF
 翻译完成！这个工具完全在本地运行，你的文本不会发送到任何外部服务器。
 ```
 
-[截图占位]
-
 > 你刚刚构建了一个私密的翻译工具。所有文本处理都在 GPU 上完成，没有任何数据离开这台机器——这就是本地 AI 的核心价值。
 
 ---
 
 ## 理解发生了什么
 
-回顾一下你刚才做了什么：
+### Lemonade 的工作原理
+
+回顾一下整个链路：
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -586,14 +617,6 @@ EOF
 └──────────────────────────────────────────────────────────────────┘
                     ↕ 没有任何数据离开这台机器
 ```
-
-### Lemonade Server 是什么？
-
-Lemonade 是 AMD 官方开源的本地 AI 推理服务，主要做三件事：
-
-1. **管理 AI 模型** — 下载、加载、卸载不同的 AI 模型
-2. **提供 API 接口** — 让你的代码能和 AI 模型对话（兼容 OpenAI API 格式）
-3. **优化 GPU 使用** — 让 AI 模型在 AMD GPU 上高效运行
 
 ### 本地 AI vs 云端 AI
 
