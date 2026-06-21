@@ -3,7 +3,9 @@
 
 ## 概览
 
-你将在 30 分钟内，把一块 AMD Radeon GPU 变成你的私人 AI 服务器。从零开始安装，到最终和 AI 自由对话——所有数据留在本地，不需要任何云端账号，完全免费。
+你将在 AMD Radeon Cloud 平台上，把一块 AMD Radeon GPU 变成你的私人 AI 服务器。从零开始安装，到最终和 AI 自由对话——模型推理由本地 GPU 加速，不需要调用任何外部 AI API（如 OpenAI、HuggingFace Inference）。
+
+> **需要什么：** AMD Radeon Cloud 账号（radeon.anruicloud.com），平台可能消耗积分。不需要 OpenAI API key 或 HuggingFace 账号。
 
 本教程会带你遇到真实世界的障碍（网络封锁、SSL 拦截），并一一解决它们。这不是理想化的演示，而是一个**从零到跑通**的实战手册。
 
@@ -12,7 +14,7 @@
 完成本教程后，你将能够：
 
 1. 从零安装并运行 AMD 出品的 Lemonade Server，在 GPU 上加载 AI 大模型
-2. 解决真实部署中的网络问题（SSL 拦截、HuggingFace 被墙），掌握国内环境下的实战技巧
+2. 解决真实部署中的网络问题（SSL 拦截、模型下载源切换），掌握国内环境下的实战技巧
 3. 用 Python 代码调用本地 AI 的 API，构建自己的 AI 应用
 
 ---
@@ -68,7 +70,7 @@
 |------|-----|
 | 平台 | AMD Radeon Cloud (radeon.anruicloud.com) |
 | 镜像 | AMD OneClick Base (rocm7.2.1-py3.12) |
-| GPU | AMD Radeon RX 7900（gfx1100，RDNA3 架构） |
+| GPU | AMD Radeon RX 7900 XTX（gfx1100，RDNA3 架构，24GB 显存） |
 | ROCm | 7.2.1（预装） |
 | Python | 3.12（预装） |
 
@@ -81,7 +83,7 @@
 [Lemonade Server](https://github.com/lemonade-sdk/lemonade) 是 AMD 官方开源的本地 AI 推理服务。它的作用是：
 
 1. **管理 AI 模型** — 一条命令下载、加载、切换不同的 AI 模型
-2. **提供标准 API** — 兼容 OpenAI API 格式，任何支持 ChatGPT 的工具都能直接接入
+2. **提供标准 API** — 兼容 OpenAI API 格式，许多支持自定义 OpenAI Base URL 的工具可以接入
 3. **优化 GPU 推理** — 自动检测你的 AMD GPU 并选择最佳加速方式
 
 简单来说：安装了 Lemonade，你的 GPU 就变成了一台本地 AI 服务器。
@@ -116,7 +118,7 @@ lemonade version 10.7.0
 
 看到版本号就说明安装成功了。
 
-> **注意：** 如果看到 `Failed to fetch http://compute-artifactory...` 之类的警告信息，不用担心——这只是系统尝试更新一个不存在的内部源，不影响 Lemonade 的安装。
+> **注意：** 如果看到 `Failed to fetch http://compute-artifactory...` 之类的警告信息，不用担心——这只是系统尝试更新一个不可用的平台预置软件源，不影响 Lemonade 的安装。
 
 ---
 
@@ -183,31 +185,38 @@ llamacpp      rocm        installable     Backend is supported but not installed
               cpu         installable     Backend is supported but not installed.
 ```
 
-> `installable` 表示"可以安装但还没装"。我们接下来要安装 Vulkan 后端——它对 AMD GPU 的兼容性最好。
+> `installable` 表示"可以安装但还没装"。我们接下来安装 Vulkan 后端。
 
 ---
 
 ## 第三步 — 安装 GPU 加速后端
 
-"后端"（backend）是连接 AI 模型和 GPU 硬件的桥梁。我们选择 **Vulkan**——它对所有 AMD GPU 都有很好的兼容性。
+"后端"（backend）是连接 AI 模型和 GPU 硬件的桥梁。我们选择 **Vulkan**——它在本教程的云 7900 环境中经过完整实测验证，安装流程最稳定。
 
-### 为什么不能直接用 `lemonade backends install`？
+> **关于 ROCm 后端：** gfx1100 同样支持 ROCm 后端（`lemonade backends` 显示 `installable`）。llama.cpp 的 Vulkan 和 ROCm 后端都在被密集开发，性能对比随版本快速变化。追求极致性能的进阶用户可自行尝试 ROCm 后端。
 
-正常情况下，一条命令就能安装后端：
+### 安装后端
+
+先尝试官方安装命令：
 
 ```bash
 lemonade backends install llamacpp:vulkan
 ```
 
-但云 7900 的网络对 GitHub HTTPS 连接做了 SSL 检查，会导致下载失败，报 `SSL: CERTIFICATE_VERIFY_FAILED` 错误。
+如果安装成功（输出 `installed`），直接跳到下一节「重启 lemond 使后端生效」。
 
-### 解决方案：用 Python 绕过 SSL 限制
+如果报 SSL 证书相关错误（例如 `SSL: CERTIFICATE_VERIFY_FAILED`、`CURL code 60`、`SSL peer certificate not OK`），说明云平台对 GitHub HTTPS 做了 SSL 检查。用下面的备用方案手动下载安装。
 
-```python
+### 备用方案：手动下载后端（仅在上一步失败时使用）
+
+> **安全提示：** 此脚本禁用了 SSL 证书校验以绕过云平台的 SSL 拦截。这是针对本受限环境的临时措施，不建议在其他场景使用。
+
+> **粘贴位置：** 以下所有 `python3 << 'EOF' ... EOF` 代码块都是 **shell 命令**，请粘贴到**终端**中执行，不是 Python 交互窗口或 Jupyter cell。
+
+```bash
 python3 << 'EOF'
-import urllib.request, ssl, os, tarfile, shutil
+import urllib.request, ssl, os, tarfile, shutil, sys
 
-# 创建不验证 SSL 证书的上下文（绕过 SSL 拦截）
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
@@ -228,19 +237,20 @@ def download(url, dest):
                     print(f"\r  下载中: {got*100//total}%", end="", flush=True)
     print(" done")
 
-# 下载 Vulkan 推理后端（约 36MB）
-print("正在下载 Vulkan 推理后端...")
+print("正在下载 Vulkan 推理后端（约 36MB）...")
 download(
     "https://github.com/ggml-org/llama.cpp/releases/download/b9585/llama-b9585-bin-ubuntu-vulkan-x64.tar.gz",
     "/tmp/vulkan.tar.gz"
 )
 
-# 解压并安装到 Lemonade 目录
 print("解压中...")
+shutil.rmtree("/tmp/vulkan-extract", ignore_errors=True)
+os.makedirs("/tmp/vulkan-extract", exist_ok=True)
 with tarfile.open("/tmp/vulkan.tar.gz") as tf:
     tf.extractall("/tmp/vulkan-extract")
 
 print("安装到 Lemonade 目录...")
+found = False
 for root, dirs, files in os.walk("/tmp/vulkan-extract"):
     if 'llama-server' in files:
         dest = "/root/.cache/lemonade/bin/llamacpp/vulkan"
@@ -250,11 +260,17 @@ for root, dirs, files in os.walk("/tmp/vulkan-extract"):
         with open(f"{dest}/version.txt", "w") as f:
             f.write("b9585")
         print(f"后端已安装到: {dest}")
+        found = True
         break
 
-# 清理临时文件
 os.remove("/tmp/vulkan.tar.gz")
 shutil.rmtree("/tmp/vulkan-extract", ignore_errors=True)
+
+if not found:
+    print("错误：压缩包中未找到 llama-server，后端安装失败。", file=sys.stderr)
+    print("请检查下载 URL 是否正确，或尝试更新版本号。", file=sys.stderr)
+    sys.exit(1)
+
 print("清理完成")
 EOF
 ```
@@ -294,13 +310,13 @@ sleep 10
 lemonade backends | grep vulkan
 ```
 
-你应该看到：
+你应该看到类似：
 
 ```
-              vulkan      installed       b9585
+              vulkan      installed       <版本号>
 ```
 
-状态从 `installable` 变成了 `installed`，后端安装成功。
+状态从 `installable` 变成了 `installed`，后端安装成功。版本号取决于安装方式：官方命令安装的版本由 Lemonade 决定，手动备用方案安装的是 b9585。
 
 ---
 
@@ -311,10 +327,10 @@ lemonade backends | grep vulkan
 | 属性 | 说明 |
 |------|------|
 | 开发方 | Google |
-| 类型 | 多模态（文本 + 视觉） |
-| 体积 | 约 3.8GB |
+| 类型 | 文本对话（模型本身支持视觉，但本教程只覆盖文本） |
+| 体积 | 模型权重约 2.9GB + 视觉组件约 0.9GB，共约 3.8GB |
 | 语言 | 中文、英文 |
-| 推理速度 | 160–270 tokens/秒（RX 7900） |
+| 推理速度 | 160–270 tokens/秒（RX 7900 XTX，Vulkan 后端） |
 
 ### 为什么不能直接 `lemonade pull`？
 
@@ -333,7 +349,7 @@ lemonade pull Gemma-4-E2B-it-GGUF
 pip install -q modelscope
 ```
 
-```python
+```bash
 python3 << 'EOF'
 from modelscope.hub.file_download import model_file_download
 import os
@@ -384,7 +400,7 @@ Downloading: 100%|##########| 3.11G/3.11G
 模型已配置到 Lemonade 缓存，可以加载了
 ```
 
-> **注意：** 下载 3.8GB 可能需要 2–5 分钟，取决于网络速度。如果中途断开，重新运行即可（已下载的部分会自动续传）。
+> **注意：** 脚本会分别下载模型权重（约 2.9GB）、视觉组件（约 0.9GB）和配置文件，共约 3.8GB。下载可能需要 2–5 分钟，取决于网络速度。如果中途断开，重新运行即可（已下载的部分会自动续传）。
 
 ---
 
@@ -437,9 +453,11 @@ Gemma-4-E2B-it-GGUF           llm       gpu       llamacpp      unsloth/gemma-4-
 
 模型已经运行了，现在让我们和它说话。
 
+> 以下对话和应用代码同样是 `python3 << 'EOF'` 格式的 **shell 命令**，粘贴到**终端**执行。
+
 ### 第一次对话：简单数学
 
-```python
+```bash
 python3 << 'EOF'
 import json, urllib.request
 
@@ -475,7 +493,7 @@ AI 正确回答了，而且速度超过 160 tokens/秒——这就是 GPU 加速
 
 ### 试试中文对话
 
-```python
+```bash
 python3 << 'EOF'
 import json, urllib.request
 
@@ -499,7 +517,7 @@ EOF
 
 ### 多轮对话（AI 记住上文）
 
-```python
+```bash
 python3 << 'EOF'
 import json, urllib.request
 
@@ -541,7 +559,7 @@ EOF
 
 学会了和 AI 对话，让我们来做点实用的——一个中英互译工具。
 
-```python
+```bash
 python3 << 'EOF'
 import json, urllib.request
 
@@ -578,7 +596,7 @@ for text, src, tgt in examples:
     print()
 
 print("=" * 50)
-print("翻译完成！这个工具完全在本地运行，你的文本不会发送到任何外部服务器。")
+print("翻译完成！模型推理由本地 GPU 加速，不经过任何外部 AI API。")
 EOF
 ```
 
@@ -599,10 +617,10 @@ EOF
 译文（英文）: The deadline for this project is next Friday.
 
 ==================================================
-翻译完成！这个工具完全在本地运行，你的文本不会发送到任何外部服务器。
+翻译完成！模型推理由本地 GPU 加速，不经过任何外部 AI API。
 ```
 
-> 你刚刚构建了一个私密的翻译工具。所有文本处理都在 GPU 上完成，没有任何数据离开这台机器——这就是本地 AI 的核心价值。
+> 你刚刚构建了一个本地翻译工具。模型推理由本地 GPU 加速，不经过外部 AI API——这就是本地推理的核心价值。
 
 ---
 
@@ -624,25 +642,26 @@ EOF
 │                 AI 模型 (Gemma-4)                                   │
 │                 存储在本地磁盘                                      │
 └──────────────────────────────────────────────────────────────────┘
-                    ↕ 没有任何数据离开这台机器
+                    ↕ 推理请求不发送到外部 AI API
 ```
 
-### 本地 AI vs 云端 AI
+### 本地推理 vs 云端 AI API
 
-| 对比项 | 本地 AI（你刚搭建的） | 云端 AI（如 ChatGPT） |
+| 对比项 | 本地推理（你刚搭建的） | 云端 AI API（如 OpenAI） |
 |--------|----------------------|---------------------|
-| 数据隐私 | 数据完全不离开本机 | 数据发送到远程服务器 |
-| 网络依赖 | 运行时不需要网络 | 必须联网 |
-| 费用 | GPU 电费（或云平台积分） | 按 token 计费 |
+| 数据流向 | 推理请求不发送到外部 AI API | 数据发送到远程 API 服务器 |
+| 网络依赖 | 模型加载后推理不需要网络 | 必须联网 |
+| 费用 | 云平台积分（或本地 GPU 电费） | 按 token 计费 |
 | 模型能力 | 受限于本地 GPU 显存 | 可运行超大模型 |
 | 响应速度 | 极快（无网络延迟） | 取决于网络和服务器负载 |
 | 定制化 | 可以自由选择和切换模型 | 只能用提供的模型 |
 
-### 为什么本地 AI 重要？
+> **注意：** 如果你在云平台上运行（如本教程），数据仍位于你的云 workspace 环境内，请遵守平台和组织的数据管理政策。
 
-- **隐私** — 处理敏感信息（公司文档、个人数据）时，数据不会泄露
+### 为什么本地推理重要？
+
+- **数据不经外部 API** — 模型推理由本地 GPU 加速完成，不发送到外部 AI 服务
 - **离线可用** — 模型加载后不需要网络也能运行
-- **无审查** — 没有内容过滤，AI 按照模型本身的能力回答
 - **成本可控** — 一次下载模型，无限次使用，不按 token 收费
 
 ---
@@ -651,13 +670,18 @@ EOF
 
 ### 尝试更大的模型
 
-当前的 Gemma-4-E2B（3.8GB）是轻量版。RX 7900 有 16GB 显存，可以运行更大的模型：
+当前的 Gemma-4-E2B（约 3.8GB）是轻量版。RX 7900 XTX 有 24GB 显存，可以运行更大的模型：
+
+| 模型 | 大小 | 特点 | 注意事项 |
+|------|------|------|----------|
+| Gemma-4-E2B（本教程） | ~3.8GB | 快速、回复直接 | 零基础首选 |
+| Qwen3.6-35B-A3B | ~21.7GB | 35B 总参 / 3B 激活（MoE），推理能力强 | 默认启用 thinking 模式且无法关闭，回复前会输出大段推理过程，content 字段可能为空；适合想看推理链的进阶用户 |
 
 ```bash
 # 查看所有可用模型
 lemonade list
 
-# 例如：运行 27B 参数的 Qwen 模型（约 22GB，需要更长下载时间）
+# 进阶：运行 Qwen3.6（需从 ModelScope 单独下载，约 21.7GB）
 # lemonade run Qwen3.6-35B-A3B-GGUF --llamacpp vulkan
 ```
 
@@ -667,7 +691,7 @@ Lemonade 的 API 兼容 OpenAI 格式，你可以用它接入：
 
 - **Open WebUI** — 一个漂亮的聊天界面
 - **LangChain** — 构建复杂的 AI 应用管道
-- **任何支持 OpenAI API 的客户端**
+- **支持自定义 OpenAI Base URL 的客户端**
 
 > 连接方式：Base URL = `http://127.0.0.1:13305/api/v1`
 
@@ -717,7 +741,7 @@ Vulkan 是一个跨平台的图形和计算 API，AMD Radeon GPU 通过 Vulkan �
 
 **答案：C**
 
-实测数据显示，RX 7900 使用 Vulkan 后端运行 Gemma-4-E2B-it-GGUF (Q4_K_M) 模型，生成速度在 160–270 tokens/秒之间。这得益于 RDNA3 架构的 GPU 计算能力和 Q4_K_M 量化对显存带宽的高效利用。
+实测数据显示，RX 7900 XTX 使用 Vulkan 后端运行 Gemma-4-E2B-it-GGUF (Q4_K_M) 模型，生成速度在 160–270 tokens/秒之间。这得益于 RDNA3 架构的 GPU 计算能力和 Q4_K_M 量化对显存带宽的高效利用。
 
 </details>
 
@@ -743,48 +767,38 @@ AMD Radeon RX 7900 使用 gfx1100 代号，属于 RDNA3 架构。RDNA3 是 AMD �
 
 ## 附录 — 故障排查
 
-### lemond 启动失败
+| 症状 | 可能原因 | 解决方法 |
+|------|----------|----------|
+| `lemonade status` 报连接失败 | lemond 没启动或已崩溃 | `cat /tmp/lemond.log` 查看日志；按第二步重新启动 lemond |
+| 端口 13305 被占用 | 上次 lemond 没完全退出 | `pkill -9 -f lemond && sleep 3` 后重新启动 |
+| `lemonade backends install` 报 SSL 错误 | 云平台 SSL 拦截 | 使用第三步的备用方案手动下载 |
+| 后端安装脚本报"未找到 llama-server" | llama.cpp 版本号变化导致压缩包结构不同 | 检查 [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases) 获取最新版本号，更新脚本中的 URL |
+| ModelScope 下载失败 / 超时 | 网络问题 | 重新运行下载命令（已下载部分会续传）；检查磁盘空间 `df -h` |
+| `lemonade run` 后模型加载失败 | 模型文件不在 Lemonade 期望路径 | `ls /root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF/snapshots/main/` 确认文件存在 |
+| API 调用返回空 content | max_tokens 太小（尤其 thinking 模式模型） | 增大 `max_tokens`（建议 2000+） |
+| API 调用超时 | 模型未加载或 lemond 崩溃 | `lemonade status` 确认模型在运行；查看 `/tmp/lemond.log` |
+| 推理速度异常低 | 模型在 CPU 而非 GPU 上运行 | `lemonade status` 检查 Device 列是否为 `gpu`；确认用了 `--llamacpp vulkan` |
+| `add-apt-repository` 命令不存在 | 缺少 `software-properties-common` | `apt-get install -y software-properties-common` |
+| 磁盘空间不足 | 模型 + 后端需要约 5GB | `df -h` 检查剩余空间；删除不需要的文件 |
+
+### 停止服务
 
 ```bash
-# 查看日志
-cat /tmp/lemond.log
-
-# 检查端口是否被占用
-ss -tlnp | grep 13305
-
-# 如果端口被占用，先杀掉旧进程再重启
 pkill -9 -f lemond
-sleep 3
-mkdir -p /run/lemonade /var/lib/lemonade /tmp/lemonade-runtime
-RUNTIME_DIRECTORY=/run/lemonade \
-  XDG_RUNTIME_DIR=/tmp/lemonade-runtime \
-  STATE_DIRECTORY=/var/lib/lemonade \
-  nohup /usr/bin/lemond > /tmp/lemond.log 2>&1 &
 ```
 
-### 模型加载失败
+### 删除 Lemonade 后端和模型索引（可选）
+
+> **注意：** 以下命令会删除 Vulkan 后端和 Lemonade 的模型索引。删除后需要重新安装后端和配置模型才能再次使用。只在你确定不再需要时执行。
 
 ```bash
-# 检查模型是否已下载
-ls /root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF/
+rm -rf /root/.cache/lemonade/bin/llamacpp/vulkan
 
-# 检查 GPU 是否正常
-rocm-smi
-
-# 查看详细错误
-cat /tmp/lemond.log | tail -30
+rm -rf /root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF
 ```
 
-### Python 调用 API 超时
-
-```bash
-# 确认服务在运行
-lemonade status
-
-# 如果没有模型信息，重新加载模型
-lemonade run Gemma-4-E2B-it-GGUF --llamacpp vulkan
-```
+> ModelScope 下载的原始模型文件可能仍在 `~/.cache/modelscope/` 下。该目录也可能包含其他模型的缓存；如需释放磁盘空间，请先确认属于 `unsloth/gemma-4-E2B-it-GGUF` 的子目录，再只删除对应内容。
 
 ---
 
-*本教程基于 AMD Radeon Cloud (radeon.anruicloud.com) 云 7900 环境实测验证。Lemonade Server v10.7.0, llama.cpp Vulkan 后端 b9585。*
+*本教程基于 AMD Radeon Cloud (radeon.anruicloud.com) 云 7900 环境实测验证。Lemonade Server v10.7.0。手动备用方案使用 llama.cpp Vulkan 后端 b9585；官方安装命令的版本以 Lemonade 输出为准。*
