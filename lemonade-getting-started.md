@@ -21,31 +21,25 @@
 
 ## 准备工作 — 创建 GPU 工作环境
 
-### 打开 AMD Radeon Cloud 平台
+### 创建并启动 Workspace
 
-1. 浏览器访问 **https://radeon.anruicloud.com**
-2. 登录你的账号（如果没有，先注册）
-3. 点击页面上的 **Create Template** 按钮创建一个新的 workspace
+1. 浏览器访问 **https://radeon.anruicloud.com**，登录你的账号（如果没有，先注册）
 
-![创建 Workspace](assets/01-create-workspace.png)
+2. 点击右上角的 **Profile** 头像，进入个人页面
 
-4. 在创建页面中，镜像选择：**AMD OneClick Base**，其他配置保持默认
+3. 滚动到底部 **My Templates** 区域，点击 **Add Template** 按钮
 
-![选择镜像](assets/02-workspace-config.png)
+![个人页面 - Add Template](assets/01-profile-add-template.png)
 
-5. 等待 workspace 创建完成（通常 1-2 分钟）
+4. 在弹窗中，**Container Image** 选择 **AMD OneClick Base**，其他配置保持默认，点击底部 **Add Template** 确认
 
-### 启动 Workspace
+![选择镜像](assets/02-add-template-dialog.png)
 
-创建完成后，进入你的 workspace：
+5. 创建完成后，在 **My Templates** 列表中找到你的 template，点击 **Launch** 启动
 
-1. 点击右上角的 **Profile** 头像
+![启动 Workspace](assets/03-launch-template.png)
 
-![点击 Profile](assets/03-launch-step1.png)
-
-2. 在 workspace 列表中，点击 **Open Notebook** 按钮
-
-![打开 Notebook](assets/04-launch-step2.png)
+6. 等待 JupyterLab 加载完成（通常 1-2 分钟）
 
 ### 打开终端
 
