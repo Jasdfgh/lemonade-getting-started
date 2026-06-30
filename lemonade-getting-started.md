@@ -84,18 +84,63 @@
 
 ### 安装
 
+我们从 GitHub 下载 Lemonade 的独立安装包（v10.7.0），解压即用，不需要额外配置。
+
+> **粘贴位置：** 以下 `python3 << 'EOF' ... EOF` 代码块是 **shell 命令**，请粘贴到**终端**中执行，不是 Python 交互窗口。
+
 ```bash
-# 更新软件源列表
-apt-get update -qq
+python3 << 'EOF'
+import urllib.request, ssl, os, tarfile, shutil
 
-# 添加 Lemonade 官方软件源
-add-apt-repository -y ppa:lemonade-team/stable
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
 
-# 再次更新（让系统识别新加的源）
-apt-get update -qq
+def download(url, dest):
+    req = urllib.request.Request(url, headers={"User-Agent": "lemonade"})
+    with urllib.request.urlopen(req, context=ctx, timeout=600) as resp:
+        total = int(resp.headers.get('Content-Length', 0))
+        got = 0
+        with open(dest, 'wb') as f:
+            while True:
+                chunk = resp.read(1024*1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                got += len(chunk)
+                if total:
+                    print(f"\r  下载中: {got*100//total}%", end="", flush=True)
+    print(" done")
 
-# 安装 Lemonade Server
-apt-get install -y lemonade-server
+print("正在下载 Lemonade Server v10.7.0...")
+download(
+    "https://github.com/lemonade-sdk/lemonade/releases/download/v10.7.0/lemonade-embeddable-10.7.0-ubuntu-x64.tar.gz",
+    "/tmp/lemonade.tar.gz"
+)
+
+print("解压中...")
+shutil.rmtree("/tmp/lemonade-extract", ignore_errors=True)
+with tarfile.open("/tmp/lemonade.tar.gz") as tf:
+    tf.extractall("/tmp/lemonade-extract")
+
+print("安装到 /opt/lemonade...")
+dest = "/opt/lemonade"
+if os.path.exists(dest):
+    shutil.rmtree(dest)
+shutil.copytree("/tmp/lemonade-extract/lemonade-embeddable-10.7.0-ubuntu-x64", dest)
+os.chmod(f"{dest}/lemond", 0o755)
+os.chmod(f"{dest}/lemonade", 0o755)
+
+os.remove("/tmp/lemonade.tar.gz")
+shutil.rmtree("/tmp/lemonade-extract", ignore_errors=True)
+print("安装完成！")
+EOF
+```
+
+接下来创建一个快捷方式，让你可以直接输入 `lemonade` 命令：
+
+```bash
+ln -sf /opt/lemonade/lemonade /usr/local/bin/lemonade
 ```
 
 ### 验证安装
@@ -104,15 +149,11 @@ apt-get install -y lemonade-server
 lemonade --version
 ```
 
-你应该看到类似这样的输出：
+你应该看到：
 
 ```
 lemonade version 10.7.0
 ```
-
-看到版本号就说明安装成功了。
-
-> **注意：** 如果看到 `Failed to fetch http://compute-artifactory...` 之类的警告信息，不用担心——这只是系统尝试更新一个不可用的平台预置软件源，不影响 Lemonade 的安装。
 
 ---
 
@@ -132,16 +173,17 @@ Lemonade 有两个组件：
 mkdir -p /run/lemonade /var/lib/lemonade /tmp/lemonade-runtime
 
 # 在后台启动 lemond，日志写入 /tmp/lemond.log
+cd /opt/lemonade
 RUNTIME_DIRECTORY=/run/lemonade \
   XDG_RUNTIME_DIR=/tmp/lemonade-runtime \
   STATE_DIRECTORY=/var/lib/lemonade \
-  nohup /usr/bin/lemond > /tmp/lemond.log 2>&1 &
+  nohup ./lemond > /tmp/lemond.log 2>&1 &
 
 # 等待服务完全启动
 sleep 10
 ```
 
-> 这条启动命令做了三件事：前面的环境变量告诉 lemond 把工作文件放在哪些目录；`nohup ... &` 让它在后台运行，关掉终端也不会停；`> /tmp/lemond.log 2>&1` 把运行日志保存到文件，方便排查问题。
+> 这条启动命令做了三件事：`cd /opt/lemonade` 进入安装目录（lemond 从这里加载 resources 配置）；`nohup ... &` 让它在后台运行，关掉终端也不会停；`> /tmp/lemond.log 2>&1` 把运行日志保存到文件，方便排查问题。
 
 ### 验证服务状态
 
@@ -185,9 +227,7 @@ llamacpp      rocm        installable     Backend is supported but not installed
 
 ## 第三步 — 安装 GPU 加速后端
 
-"后端"（backend）是连接 AI 模型和 GPU 硬件的桥梁。我们选择 **Vulkan**——它在本教程的云 7900 环境中经过完整实测验证，安装流程最稳定。
-
-> **关于 ROCm 后端：** gfx1100 同样支持 ROCm 后端（`lemonade backends` 显示 `installable`）。llama.cpp 的 Vulkan 和 ROCm 后端都在被密集开发，性能对比随版本快速变化。追求极致性能的进阶用户可自行尝试 ROCm 后端。
+"后端"（backend）是让 AI 模型利用 GPU 加速的驱动程序。GPU 有两种加速方式——**Vulkan** 和 **ROCm**。本教程用 Vulkan，它兼容性好、安装简单，适合零基础一次跑通。
 
 ### 安装后端
 
@@ -291,10 +331,11 @@ sleep 3
 
 # 重新启动
 mkdir -p /run/lemonade /var/lib/lemonade /tmp/lemonade-runtime
+cd /opt/lemonade
 RUNTIME_DIRECTORY=/run/lemonade \
   XDG_RUNTIME_DIR=/tmp/lemonade-runtime \
   STATE_DIRECTORY=/var/lib/lemonade \
-  nohup /usr/bin/lemond > /tmp/lemond.log 2>&1 &
+  nohup ./lemond > /tmp/lemond.log 2>&1 &
 sleep 10
 ```
 
@@ -412,11 +453,12 @@ lemonade run Gemma-4-E2B-it-GGUF --llamacpp vulkan
 ```
 Loading model: Gemma-4-E2B-it-GGUF
 Model loaded successfully!
+Opening URL: http://127.0.0.1:13305/
 ```
 
 ![模型加载成功](assets/07-model-loaded.png)
 
-"Model loaded successfully!" 表示 AI 模型已经加载到 GPU 上了。
+"Model loaded successfully!" 表示 AI 模型已经加载到 GPU 上了。最后一行 URL 是 Lemonade 的本地 Web UI 地址，在云环境中无法直接访问，忽略即可——我们接下来用 Python 代码和 AI 对话。
 
 ### 验证模型状态
 
@@ -795,4 +837,4 @@ rm -rf /root/.cache/huggingface/hub/models--unsloth--gemma-4-E2B-it-GGUF
 
 ---
 
-*本教程基于 AMD Radeon Cloud (radeon.anruicloud.com) 云 7900 环境实测验证。Lemonade Server v10.7.0。手动备用方案使用 llama.cpp Vulkan 后端 b9585；官方安装命令的版本以 Lemonade 输出为准。*
+*本教程基于 AMD Radeon Cloud (radeon.anruicloud.com) 云 7900 环境实测验证。使用 Lemonade Server v10.7.0 embeddable + llama.cpp Vulkan 后端 b9585。*

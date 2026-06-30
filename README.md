@@ -13,7 +13,7 @@
 | 平台 | AMD Radeon Cloud (radeon.anruicloud.com) |
 | GPU | AMD Radeon RX 7900 XTX (gfx1100, RDNA3, 24GB) |
 | 镜像 | AMD OneClick Base (rocm7.2.1-py3.12) |
-| Lemonade | v10.7.0 |
+| Lemonade | v10.7.0 embeddable |
 | 模型 | Gemma-4-E2B-it-GGUF (Q4_K_M, ~3.8GB) |
 
 ## 使用方法
