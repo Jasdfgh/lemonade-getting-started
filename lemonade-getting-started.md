@@ -816,6 +816,7 @@ AMD Radeon RX 7900 使用 gfx1100 代号，属于 RDNA3 架构。RDNA3 是 AMD �
 | 推理速度异常低 | 模型在 CPU 而非 GPU 上运行 | `lemonade status` 检查 Device 列是否为 `gpu`；确认用了 `--llamacpp vulkan` |
 | `add-apt-repository` 命令不存在 | 缺少 `software-properties-common` | `apt-get install -y software-properties-common` |
 | 磁盘空间不足 | 模型 + 后端需要约 5GB | `df -h` 检查剩余空间；删除不需要的文件 |
+| `lemonade run` 时莫名重新 pull 模型 | 云平台环境状态异常 | 在 Radeon Cloud 中停止并重新 Launch 你的 workspace，然后从第二步（启动 lemond）开始重新操作 |
 
 ### 停止服务
 
